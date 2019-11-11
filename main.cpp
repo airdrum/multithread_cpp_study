@@ -1,46 +1,51 @@
 #include <iostream>
-#include <thread>
-#include <list>
-#include <algorithm>
-#include <mutex>
+#include <semaphore.h>
+#include <pthread.h>
+#include <random>
+#include <unistd.h>
 
 using namespace std;
 
-// a global variable
-std::list<int>myList;
+#define BUFFER_SIZE 100
 
-// a global instance of std::mutex to protect global variable
-std::mutex myMutex;
+int buffer[BUFFER_SIZE];
+int index = 0;
 
-void addToList(int max, int interval)
-{
-	// the access to this function is mutually exclusive
-	std::lock_guard<std::mutex> guard(myMutex);
-	for (int i = 0; i < max; i++) {
-		if( (i % interval) == 0) myList.push_back(i);
-	}
+sem_t full, empty;
+pthread_mutex_t mutex;
+
+void* produce(void* arg){
+    while(1){
+        usleep(1);
+        sem_wait(&empty);
+        pthread_mutex_lock(&mutex);
+        int item = rand()%100;
+        buffer[index++] = item;
+        cout << " *** Produced " << item << endl;
+        pthread_mutex_unlock(&mutex);
+        sem_post(&full);
+    }
 }
 
-void printList()
-{
-	// the access to this function is mutually exclusive
-	std::lock_guard<std::mutex> guard(myMutex);
-	for (auto itr = myList.begin(), end_itr = myList.end(); itr != end_itr; ++itr ) {
-		cout << *itr << endl;
-	}
+void* consume(void* arg){
+    while(1){
+        usleep(1);
+        sem_wait(&full);
+        pthread_mutex_lock(&mutex);
+        int item = buffer[--index];
+        cout << "Consumed " << item << endl;
+        pthread_mutex_unlock(&mutex);
+        sem_post(&empty);
+    }
 }
 
-int main()
-{
-	int max = 100;
+int main(){
+    pthread_t producer, consumer;
+    sem_init(&empty, 0, BUFFER_SIZE);
+    sem_init(&full, 0, 0);
+    pthread_mutex_init(&mutex, NULL);
+    pthread_create(&producer, NULL, produce, NULL);
 
-	std::thread t1(addToList, max, 3);
-	std::thread t2(addToList, max, 17);
-	std::thread t3(printList);
-
-	t1.join();
-	t2.join();
-	t3.join();
-
-	return 0;
+    pthread_create(&consumer, NULL, consume, NULL);
+    pthread_exit(NULL);
 }
